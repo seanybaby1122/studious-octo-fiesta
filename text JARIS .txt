@@ -1,0 +1,124 @@
+import networkx as nx
+import numpy as np
+import requests
+import os
+from collections import Counter
+from scipy.stats import entropy, chi2_contingency
+from multiprocessing import Pool
+
+# Alphabet to number mapping (as per your system)
+alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+char_map = {c: (i % 9) + 1 for i, c in enumerate(alphabet)}
+
+# Transformation function to convert word into numeric sequence
+def transform_word(word):
+    return tuple(char_map.get(c.upper(), 0) for c in word if c.upper() in char_map)
+
+# Function to download and load word dataset
+def download_word_dataset():
+    url = "https://raw.githubusercontent.com/dwyl/english-words/master/words.txt"
+    local_path = "words.txt"
+
+    if not os.path.exists(local_path):
+        print("Downloading dataset...")
+        response = requests.get(url)
+        with open(local_path, "wb") as f:
+            f.write(response.content)
+
+    with open(local_path, "r") as f:
+        word_list = [line.strip() for line in f.readlines() if line.strip()]
+    return word_list
+
+# Parallel processing to process large datasets of words
+def process_words_parallel(word_list):
+    with Pool() as pool:
+        transformed_words = pool.map(transform_word, word_list)
+    return transformed_words
+
+# Building the graph of transformations
+def build_graph(transformed_words, original_words):
+    G = nx.DiGraph()
+
+    for original, transformed in zip(original_words, transformed_words):
+        str_transformed = "-".join(map(str, transformed))  # Convert tuple to string for uniqueness
+        G.add_edge(original, str_transformed)  # Directed edge from word to its transformed form
+
+    return G
+
+# Graph Analysis: Find important nodes & clusters
+def analyze_graph(G):
+    # Compute centrality measures and clustering
+    degree_centrality = nx.degree_centrality(G)
+    betweenness_centrality = nx.betweenness_centrality(G)
+    clustering_coeffs = nx.clustering(G.to_undirected())
+
+    # Identify top influential nodes
+    top_degree = sorted(degree_centrality.items(), key=lambda x: x[1], reverse=True)[:10]
+    top_betweenness = sorted(betweenness_centrality.items(), key=lambda x: x[1], reverse=True)[:10]
+
+    return top_degree, top_betweenness, clustering_coeffs
+
+# Visualize graph structure
+def visualize_graph(G, sample_size=100):
+    sample_nodes = list(G.nodes)[:sample_size]  # Sample subset for visualization
+    subgraph = G.subgraph(sample_nodes)
+
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(12, 8))
+    pos = nx.spring_layout(subgraph)
+    nx.draw(subgraph, pos, with_labels=True, node_size=500, font_size=8)
+    plt.show()
+
+# Statistical analysis of transformations
+def analyze_patterns(transformed_data):
+    pattern_counts = Counter(transformed_data)
+    observed = np.array(list(pattern_counts.values()))
+
+    # Compute entropy (randomness measure)
+    ent = entropy(observed, base=2)
+
+    # Chi-Square Test for non-random distribution
+    expected = np.full_like(observed, np.mean(observed))  # Uniform expectation
+    chi2, p_value = chi2_contingency([observed, expected])[:2]
+
+    return ent, chi2, p_value
+
+# Main Execution
+if __name__ == "__main__":
+    print("Loading and processing dataset...")
+    word_list = download_word_dataset()
+    transformed_data = process_words_parallel(word_list)
+
+    print("Building transformation graph...")
+    G = build_graph(transformed_data, word_list)
+
+    print("Analyzing graph structure...")
+    top_degree, top_betweenness, clustering_coeffs = analyze_graph(G)
+
+    # Print graph analysis results
+    print("\nTop 10 Nodes by Degree Centrality:")
+    for word, score in top_degree:
+        print(f"{word}: {score:.4f}")
+
+    print("\nTop 10 Nodes by Betweenness Centrality:")
+    for word, score in top_betweenness:
+        print(f"{word}: {score:.4f}")
+
+    # Visualize the graph
+    print("\nVisualizing a subset of the graph...")
+    visualize_graph(G)
+
+    # Perform statistical analysis
+    print("Performing statistical analysis...")
+    entropy_value, chi2_stat, p_val = analyze_patterns(transformed_data)
+
+    # Print analysis results
+    print("\nStatistical Analysis Results:")
+    print(f"Entropy (randomness): {entropy_value:.4f}")
+    print(f"Chi-Square Test Statistic: {chi2_stat:.4f}")
+    print(f"P-Value: {p_val:.4f}")
+
+    if p_val < 0.05:
+        print("The transformations exhibit structured, non-random patterns.")
+    else:
+        print("No statistically significant pattern detected.")
