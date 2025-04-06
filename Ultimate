@@ -1,104 +1,63 @@
 import unittest
+# Transformation Functions
+def phonetic_shift(state):
+    # Apply phonetic shift (silent 'k' in knight)
+    return state.replace("cniht", "knight")
 
+def semantic_shift(state):
+    # Apply semantic shift from 'young man' to 'noble warrior'
+    return state.replace("young man", "noble warrior")
+
+def norman_french_influence(state):
+    # Models semantic shift towards the nobility and feudal system
+    return state.replace("young man", "mounted warrior serving a lord").replace("servant", "noble warrior")
+
+def great_vowel_shift(state):
+    # Placeholder for future phonetic shifts (vowel shifts in 'knight')
+    return state.replace("knight", "knight")
+
+def chivalric_shift(state):
+    # Models the shift to a knight in a feudal, chivalric context
+    return state.replace("young man", "knight in shining armor, bound by chivalric code")
+
+# Model Class Definitions (AcronymPredictor, RecursiveAcronymModel)
 class AcronymPredictor:
     def __init__(self):
         self.data = {}
-
-    def add_acronym_data(self, acronym, topic, predicted_outcome, confidence):
-        if not acronym:
-            raise ValueError("Acronym cannot be empty")
-        self.data[acronym] = {
-            "topic": topic,
-            "predicted_outcome": predicted_outcome,
-            "confidence": confidence,
-            "actual_outcome": None
-        }
-
-    def update_outcome(self, acronym, actual_outcome, confidence):
-        if acronym in self.data:
-            self.data[acronym]["actual_outcome"] = actual_outcome
-            self.data[acronym]["confidence"] = confidence
-        else:
-            raise KeyError(f"Acronym '{acronym}' not found.")
-
-    def get_prediction(self, acronym):
-        if acronym in self.data:
-            return self.data[acronym]["predicted_outcome"], self.data[acronym]["confidence"]
-        else:
-            return None, None
-
-    def calculate_accuracy(self, predicted, actual):
-        if predicted == actual:
-            return 1.0
-        elif predicted and actual:
-            words_predicted = set(predicted.split())
-            words_actual = set(actual.split())
-            common_words = words_predicted.intersection(words_actual)
-            return len(common_words) / max(len(words_predicted), len(words_actual))
-        else:
-            return 0.0
+    
+    def add_acronym_data(self, acronym, context, definition, confidence):
+        self.data[acronym] = {"context": context, "definition": definition, "confidence": confidence}
+    
+    def predict(self, acronym):
+        return self.data.get(acronym, {})
 
 class RecursiveAcronymModel:
     def __init__(self):
         self.acronym_predictor = AcronymPredictor()
-
-    def simulate_evolution(self, acronym, initial_state, transformations, max_iterations=10):
-        """
-        Simulate the evolution of an acronym through multiple recursive transformations.
-        
-        :param acronym: The initial acronym or word.
-        :param initial_state: The initial meaning or state of the word.
-        :param transformations: List of transformation rules to apply.
-        :param max_iterations: Number of recursive iterations to simulate.
-        """
+    
+    def simulate_evolution(self, acronym, initial_state, transformations, max_iterations=5):
         state = initial_state
-        for i in range(max_iterations):
-            predicted_outcome, confidence = self.acronym_predictor.get_prediction(acronym)
-            
-            # Apply transformations recursively to update state and predictions
-            new_state = self.apply_transformations(state, transformations)
-            # Update predicted outcome and confidence
-            self.acronym_predictor.update_outcome(acronym, new_state, confidence)
-            
-            # Calculate accuracy of the transformation
-            accuracy = self.acronym_predictor.calculate_accuracy(predicted_outcome, new_state)
-            
-            print(f"Iteration {i + 1}:")
-            print(f"Current State: {state}")
-            print(f"Predicted Outcome: {predicted_outcome}")
-            print(f"New State: {new_state}")
-            print(f"Accuracy: {accuracy}\n")
-            
-            # Update the state for the next iteration
-            state = new_state
-
-    def apply_transformations(self, state, transformations):
-        """
-        Apply all transformations to the current state.
-        This function could be expanded to apply multiple types of transformations.
+        print(f"Initial state of '{acronym}': {state}")
         
-        :param state: The current state (word or acronym).
-        :param transformations: List of transformations to apply to the state.
-        :return: Transformed state.
-        """
-        for transformation in transformations:
-            state = transformation(state)
+        for i in range(max_iterations):
+            for transformation in transformations:
+                state = transformation(state)
+            print(f"Iteration {i+1}: {state}")
         return state
-
-# Sample transformations
-def phonetic_shift(state):
-    # Example transformation: apply phonetic shift (silent 'k' in knight)
-    return state.replace("cniht", "knight")
-
-def semantic_shift(state):
-    # Example transformation: semantic shift from 'young man' to 'noble warrior'
-    return state.replace("young man", "noble warrior")
 
 # Instantiate model and predictor
 model = RecursiveAcronymModel()
 
-# Adding an acronym to track
-model.acronym_predictor.add_acronym_data("E6", "Energy", "Increase in renewable energy adoption", 0.85)
+# Add acronym to track
+model.acronym_predictor.add_acronym_data("knight", "Medieval Society", "A noble warrior", 0.9)
 
-# Simulate the evolution of 'knight' through recursive transformations
-model.simulate_evolution("knight", "cniht (young man)", [phonetic_shift, semantic_shift], max_iterations=5)
+# Run the simulation of 'knight' through recursive transformations
+final_state = model.simulate_evolution(
+    "knight", 
+    "cniht (young man)", 
+    [phonetic_shift, semantic_shift, norman_french_influence, great_vowel_shift, chivalric_shift], 
+    max_iterations=5
+)
+
+# You can print or visualize final_state to explore the result
+print("Final evolved state:", final_state)
