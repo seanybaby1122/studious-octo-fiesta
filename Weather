@@ -1,0 +1,79 @@
+import pandas as pd
+import numpy as np
+import re
+from scipy.stats import pearsonr, spearmanr
+from sklearn.cluster import KMeans
+import matplotlib.pyplot as plt
+
+# Step 1: Preprocessing the Data (Weather Descriptions to Word Sums)
+weather_data = [
+    {"date": "4/10", "description": "Cloudy and cold; a couple of showers this afternoon", "temperature": 39, "humidity": 88},
+    {"date": "4/11", "description": "Cloudy with a touch of rain", "temperature": 43, "humidity": 80},
+    # Add other weather entries here
+]
+
+# Triadic mapping (A=1, B=2, ..., Z=26)
+triadic_mapping = {chr(i): (i - 96) % 7 + 1 for i in range(97, 123)}
+
+# Function to calculate word sum based on triadic mapping
+def calculate_word_sum(description):
+    description = re.sub(r'[^a-zA-Z ]', '', description).lower()  # Clean the description
+    return sum(triadic_mapping[char] for char in description if char in triadic_mapping)
+
+# Create a DataFrame and calculate word sums for descriptions
+df = pd.DataFrame(weather_data)
+df['word_sum'] = df['description'].apply(calculate_word_sum)
+
+# Step 2: Correlation Analysis
+pearson_temp_corr, _ = pearsonr(df['word_sum'], df['temperature'])
+spearman_temp_corr, _ = spearmanr(df['word_sum'], df['temperature'])
+pearson_humidity_corr, _ = pearsonr(df['word_sum'], df['humidity'])
+spearman_humidity_corr, _ = spearmanr(df['word_sum'], df['humidity'])
+
+print(f"Pearson correlation with temperature: {pearson_temp_corr:.2f}")
+print(f"Spearman correlation with temperature: {spearman_temp_corr:.2f}")
+print(f"Pearson correlation with humidity: {pearson_humidity_corr:.2f}")
+print(f"Spearman correlation with humidity: {spearman_humidity_corr:.2f}")
+
+# Step 3: Clustering with K-Means (Using word_sum, temperature, and humidity)
+X = df[['word_sum', 'temperature', 'humidity']]  # Feature matrix for clustering
+kmeans = KMeans(n_clusters=3, random_state=42)  # Apply K-Means clustering (3 clusters as an example)
+df['cluster'] = kmeans.fit_predict(X)
+
+# Step 4: Visualization (Scatter plots for correlation and clustering)
+# Scatter plot for Word Sum vs. Temperature
+plt.figure(figsize=(8, 6))
+plt.scatter(df['word_sum'], df['temperature'], c='blue', label='Temperature')
+plt.title("Word Sum vs. Temperature")
+plt.xlabel('Word Sum')
+plt.ylabel('Temperature (°F)')
+plt.show()
+
+# Scatter plot for Word Sum vs. Humidity
+plt.figure(figsize=(8, 6))
+plt.scatter(df['word_sum'], df['humidity'], c='green', label='Humidity')
+plt.title("Word Sum vs. Humidity")
+plt.xlabel('Word Sum')
+plt.ylabel('Humidity (%)')
+plt.show()
+
+# Scatter plot for Clustering: Temperature vs. Humidity
+plt.figure(figsize=(8, 6))
+plt.scatter(df['temperature'], df['humidity'], c=df['cluster'], cmap='viridis', s=100, alpha=0.6)
+plt.title("Clustering Weather Days by Word Sum, Temperature, and Humidity")
+plt.xlabel('Temperature (°F)')
+plt.ylabel('Humidity (%)')
+plt.colorbar(label='Cluster')
+plt.show()
+def calculate_correlations(df):
+    pearson_temp_corr, _ = pearsonr(df['word_sum'], df['temperature'])
+    spearman_temp_corr, _ = spearmanr(df['word_sum'], df['temperature'])
+    pearson_humidity_corr, _ = pearsonr(df['word_sum'], df['humidity'])
+    spearman_humidity_corr, _ = spearmanr(df['word_sum'], df['humidity'])
+
+    return {
+        'pearson_temp_corr': pearson_temp_corr,
+        'spearman_temp_corr': spearman_temp_corr,
+        'pearson_humidity_corr': pearson_humidity_corr,
+        'spearman_humidity_corr': spearman_humidity_corr
+    }
