@@ -1,0 +1,126 @@
+# JARIS: Judgment and Analysis via Recursive Intelligence System
+
+[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
+
+**JARIS** is a symbolic intelligence engine that decodes, transforms, and simulates language and data using rule-based logic, graph theory, and machine learning. It combines acronym processing, dynamic transformation systems, and time-based simulations to model and predict system behavior — especially in domains involving finance, control systems, and constructed reality.
+
+---
+
+## Core Features
+
+### 1. Symbolic Transformation Engine
+- Encodes text using a triadic letter-to-number mapping.
+- Vowel-based flow control (Start Gates).
+- Supports contextual command/action sets and transformation layers.
+
+### 2. Acronym Intelligence Framework
+- Auto-detects and encodes acronyms.
+- Graph links based on usage, context, and temporal relationships.
+- Tracks influence, cycles, and system impact.
+
+### 3. Graph-Based System Modeling
+- Graphs capture cause-effect relationships and system cycles.
+- Analyzes symbolic dominance, feedback loops, and reset conditions.
+- Tools: PageRank, cycle detection, centrality measures.
+
+### 4. Simulation Engine
+- Time-step simulations and event queue modeling.
+- Models feedback, cascading triggers, and phase shifts.
+- Used to test theories in control, finance, and survival logic.
+
+### 5. Learning and Feedback Loop
+- Reinforcement learning applied to transformation weight tuning.
+- A/B testing and unsupervised discovery of latent patterns.
+- Feedback directly modifies edge weights and transformation logic.
+
+---
+
+## Architecture Overview
+
+```text
+[Input Text]
+   |
+   v
+[Symbolic Transformer] ---> [Acronym Extractor]
+   |                             |
+   v                             v
+[Graph Builder] <-----> [Simulation Engine]
+   |                             |
+   v                             v
+[Machine Learning] <-----> [Feedback Loop]
+```
+
+---
+
+## Quick Start
+
+### Installation
+
+```bash
+git clone https://github.com/yourname/jaris.git
+cd jaris
+pip install -r requirements.txt
+```
+
+### Running
+
+```bash
+python main.py --mode interactive
+```
+
+Available Modes:
+- `interactive`
+- `simulate`
+- `visualize`
+- `train`
+- `export`
+
+---
+
+## Directory Structure
+
+```text
+jaris/
+├── core/                  # Main symbolic engine
+├── data/                  # Rules, acronyms, snapshots
+├── ml/                    # Learning models and manager
+├── ui/                    # User interface logic
+├── tests/                 # Unit tests
+├── requirements.txt
+└── README.md
+```
+
+---
+
+## Roadmap
+
+- [x] Symbolic transformation
+- [x] Acronym graph engine
+- [x] Time-based simulation
+- [x] Feedback learning loop
+- [ ] REST API
+- [ ] Web dashboard
+- [ ] Full cloud deployment
+
+---
+
+## License
+
+This project is licensed under the MIT License.
+
+---
+
+## Contributing
+
+Contributions welcome! Please fork and submit a PR, or open an issue to discuss enhancements.
+
+---
+
+## Contact
+
+Built by **Sean**  
+> “Everything is code. The code is the key. JARIS helps you read the code.”
+
+
