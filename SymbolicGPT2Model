@@ -1,0 +1,430 @@
+# prompt: It looks like you’re building a custom GPT-2 variant that injects symbolic context directly at the embedding level—very powerful for symbolic conditioning. You’ve made significant progress already. Here’s how to complete the forward function and ensure all components like attention_mask, past_key_values, and outputs are handled properly:
+# ⸻
+# ✅ Suggested Completion for forward Function:
+#         transformer_outputs = self.transformer(
+#             inputs_embeds=input_embeds_with_pos,
+#             attention_mask=attention_mask,
+#             past_key_values=past_key_values,
+#             use_cache=use_cache,
+#             output_attentions=output_attentions,
+#             output_hidden_states=output_hidden_states,
+#         )
+#         hidden_states = transformer_outputs[0]  # Last hidden state
+#         logits = self.lm_head(hidden_states)
+#         return CausalLMOutputWithPast(
+#             loss=None,
+#             logits=logits,
+#             past_key_values=transformer_outputs.past_key_values,
+#             hidden_states=transformer_outputs.hidden_states,
+#             attentions=transformer_outputs.attentions,
+#         )
+# ⸻
+# 🔍 Key Clarifications
+# 	•	Positional Embeddings:
+# You’ve already handled this well by manually injecting wpe(position_ids) into your inputs_embeds. That ensures positional coherence.
+# 	•	Attention Mask:
+# You’re correctly planning to pass it through. Just ensure it matches the shape of the concatenated embeddings.
+# 	•	past_key_values Handling:
+# Your logic with past_length is good. This is essential for autoregressive generation, especially when continuing from symbolic context.
+# ⸻
+# ⚙️ Optional Enhancements
+# 	1.	Loss Calculation (if labels are passed):
+# If you decide to support training, consider adding a labels parameter to compute cross-entropy loss as in your earlier model.
+# 	2.	Symbolic Debug Hooks:
+# You could expose intermediate layers for symbolic interpretation (e.g., representations of only symbolic context vs. combined).
+# 	3.	Validation Shape Assertions:
+# Add internal sh
+
+import torch
+import torch.nn as nn
+from transformers import GPT2Model, GPT2Config
+from transformers.modeling_outputs import CausalLMOutputWithPast
+
+class SymbolicallyConditionedGPT2LMHeadModel(nn.Module):
+    def __init__(self, config: GPT2Config, symbol_embedding_size: int):
+        super().__init__()
+        self.config = config
+        self.transformer = GPT2Model(config)
+        self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+
+        # Layer to map symbolic context to a compatible embedding space
+        self.symbol_projection = nn.Linear(symbol_embedding_size, config.n_embd)
+
+    def forward(
+        self,
+        input_ids=None,
+        past_key_values=None,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        head_mask=None,
+        inputs_embeds=None,
+        encoder_hidden_states=None, # Not typically used in standard GPT-2
+        encoder_attention_mask=None, # Not typically used in standard GPT-2
+        labels=None, # Optional for training
+        use_cache=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=True,
+        symbol_context=None, # Your symbolic context tensor
+    ):
+        # Handle symbolic context injection
+        if symbol_context is not None:
+            # Project symbolic context to the model's embedding size
+            symbol_embeds = self.symbol_projection(symbol_context) # Shape: (batch_size, num_symbol_tokens, hidden_size)
+
+            # If input_ids are provided, get token embeddings
+            if input_ids is not None:
+                input_embeds = self.transformer.wte(input_ids) # Shape: (batch_size, seq_length, hidden_size)
+                # Concatenate symbolic embeddings with token embeddings
+                inputs_embeds = torch.cat([symbol_embeds, input_embeds], dim=1)
+                # Update attention_mask to include symbolic context
+                if attention_mask is not None:
+                    symbol_mask = torch.ones(symbol_embeds.shape[:2], dtype=attention_mask.dtype, device=attention_mask.device)
+                    attention_mask = torch.cat([symbol_mask, attention_mask], dim=1)
+                else:
+                     # Create an attention mask for the concatenated sequence
+                    attention_mask = torch.ones(inputs_embeds.shape[:2], dtype=torch.long, device=inputs_embeds.device)
+
+            elif inputs_embeds is not None:
+                 # If inputs_embeds are already provided, just concatenate
+                 inputs_embeds = torch.cat([symbol_embeds, inputs_embeds], dim=1)
+                 # Update attention_mask to include symbolic context
+                 if attention_mask is not None:
+                     symbol_mask = torch.ones(symbol_embeds.shape[:2], dtype=attention_mask.dtype, device=attention_mask.device)
+                     attention_mask = torch.cat([symbol_mask, attention_mask], dim=1)
+                 else:
+                      # Create an attention mask for the concatenated sequence
+                    attention_mask = torch.ones(inputs_embeds.shape[:2], dtype=torch.long, device=inputs_embeds.device)
+
+            else:
+                # Only symbolic context is provided (e.g., to prime the model)
+                inputs_embeds = symbol_embeds
+                 # Create an attention mask for the symbolic sequence
+                if attention_mask is not None:
+                     symbol_mask = torch.ones(symbol_embeds.shape[:2], dtype=attention_mask.dtype, device=attention_mask.device)
+                     attention_mask = torch.cat([symbol_mask, attention_mask], dim=1)
+                else:
+                     attention_mask = torch.ones(inputs_embeds.shape[:2], dtype=torch.long, device=inputs_embeds.device)
+
+
+            # Update position_ids to account for the prepended symbolic context
+            if position_ids is None:
+                seq_length = inputs_embeds.shape[1]
+                past_length = 0
+                if past_key_values is not None:
+                    past_length = past_key_values[0][0].shape[-2]
+                position_ids = torch.arange(past_length, seq_length + past_length, dtype=torch.long, device=inputs_embeds.device)
+                position_ids = position_ids.unsqueeze(0).expand(inputs_embeds.shape[0], -1) # (batch_size, seq_length + num_symbol_tokens)
+            else:
+                # Assuming position_ids only covered the original tokens, adjust them
+                 num_symbol_tokens = symbol_embeds.shape[1]
+                 position_ids = position_ids + num_symbol_tokens # Shift positions of original tokens
+
+            # Add positional embeddings manually
+            input_embeds_with_pos = inputs_embeds + self.transformer.wpe(position_ids)
+
+        elif inputs_embeds is not None:
+            # If inputs_embeds are already provided (without symbolic context), use them directly
+            input_embeds_with_pos = inputs_embeds
+             # Add positional embeddings if position_ids are provided
+            if position_ids is not None:
+                 input_embeds_with_pos = input_embeds_with_pos + self.transformer.wpe(position_ids)
+
+        elif input_ids is not None:
+            # If input_ids are provided (without symbolic context), get token embeddings
+            input_embeds = self.transformer.wte(input_ids)
+            # Add positional embeddings
+            if position_ids is None:
+                seq_length = input_ids.shape[1]
+                past_length = 0
+                if past_key_values is not None:
+                    past_length = past_key_values[0][0].shape[-2]
+                position_ids = torch.arange(past_length, seq_length + past_length, dtype=torch.long, device=input_ids.device)
+                position_ids = position_ids.unsqueeze(0).expand(input_ids.shape[0], -1)
+            input_embeds_with_pos = input_embeds + self.transformer.wpe(position_ids)
+
+        else:
+            # Should not happen if either input_ids or inputs_embeds is provided
+            raise ValueError("You have to specify either input_ids or inputs_embeds")
+
+
+        # Pass the potentially modified inputs_embeds, attention_mask, and position_ids to the transformer
+        transformer_outputs = self.transformer(
+            inputs_embeds=input_embeds_with_pos,
+            attention_mask=attention_mask,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            position_ids=None, # We added position_ids manually to inputs_embeds
+            token_type_ids=token_type_ids,
+            head_mask=head_mask,
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=encoder_attention_mask,
+            return_dict=return_dict,
+        )
+
+        hidden_states = transformer_outputs[0]  # Last hidden state
+
+        # If symbolic context was prepended, we only want logits for the original tokens
+        if symbol_context is not None and (input_ids is not None or (inputs_embeds is not None and inputs_embeds.shape[1] > 0)):
+            num_symbol_tokens = symbol_context.shape[1]
+            hidden_states = hidden_states[:, num_symbol_tokens:, :] # Take hidden states corresponding to original tokens
+
+        logits = self.lm_head(hidden_states)
+
+        loss = None
+        if labels is not None:
+            # Shift so that tokens < n predict n
+            shift_logits = logits[..., :-1, :].contiguous()
+            shift_labels = labels[..., 1:].contiguous()
+            # Flatten the tokens
+            loss_fct = nn.CrossEntropyLoss()
+            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+
+        if not return_dict:
+            output = (logits,) + transformer_outputs[1:]
+            return ((loss,) + output) if loss is not None else output
+
+        return CausalLMOutputWithPast(
+            loss=loss,
+            logits=logits,
+            past_key_values=transformer_outputs.past_key_values,
+            hidden_states=transformer_outputs.hidden_states,
+            attentions=transformer_outputs.attentions,
+        )
+
+# Example usage:
+# config = GPT2Config.from_pretrained("gpt2")
+# symbol_embedding_dim = 128 # Example dimension for your symbolic context
+# model = SymbolicallyConditionedGPT2LMHeadModel(config, symbol_embedding_dim)
+
+# # Example symbolic context: a tensor representing some structured information
+# batch_size = 2
+# num_symbol_tokens = 3
+# symbol_context_example = torch.randn(batch_size, num_symbol_tokens, symbol_embedding_dim)
+
+# # Example input text tokens (standard GPT-2 input_ids)
+# input_ids_example = torch.randint(0, config.vocab_size, (batch_size, 10))
+
+# # Forward pass with symbolic context
+# outputs = model(input_ids=input_ids_example, symbol_context=symbol_context_example)
+
+# print("Logits shape:", outputs.logits.shape) # Should be (batch_size, seq_length, vocab_size) where seq_length is the original sequence length
+# prompt: It looks like you’re building a custom GPT-2 variant that injects symbolic context directly at the embedding level—very powerful for symbolic conditioning. You’ve made significant progress already. Here’s how to complete the forward function and ensure all components like attention_mask, past_key_values, and outputs are handled properly:
+# ⸻
+# ✅ Suggested Completion for forward Function:
+#         transformer_outputs = self.transformer(
+#             inputs_embeds=input_embeds_with_pos,
+#             attention_mask=attention_mask,
+#             past_key_values=past_key_values,
+#             use_cache=use_cache,
+#             output_attentions=output_attentions,
+#             output_hidden_states=output_hidden_states,
+#         )
+#         hidden_states = transformer_outputs[0]  # Last hidden state
+#         logits = self.lm_head(hidden_states)
+#         return CausalLMOutputWithPast(
+#             loss=None,
+#             logits=logits,
+#             past_key_values=transformer_outputs.past_key_values,
+#             hidden_states=transformer_outputs.hidden_states,
+#             attentions=transformer_outputs.attentions,
+#         )
+# ⸻
+# 🔍 Key Clarifications
+# 	•	Positional Embeddings:
+# You’ve already handled this well by manually injecting wpe(position_ids) into your inputs_embeds. That ensures positional coherence.
+# 	•	Attention Mask:
+# You’re correctly planning to pass it through. Just ensure it matches the shape of the concatenated embeddings.
+# 	•	past_key_values Handling:
+# Your logic with past_length is good. This is essential for autoregressive generation, especially when continuing from symbolic context.
+# ⸻
+# ⚙️ Optional Enhancements
+# 	1.	Loss Calculation (if labels are passed):
+# If you decide to support training, consider adding a labels parameter to compute cross-entropy loss as in your earlier model.
+# 	2.	Symbolic Debug Hooks:
+# You could expose intermediate layers for symbolic interpretation (e.g., representations of only symbolic context vs. combined).
+# 	3.	Validation Shape Assertions:
+# Add internal sh
+
+import torch
+import torch.nn as nn
+from transformers import GPT2Model, GPT2Config
+from transformers.modeling_outputs import CausalLMOutputWithPast
+
+class SymbolicallyConditionedGPT2LMHeadModel(nn.Module):
+    def __init__(self, config: GPT2Config, symbol_embedding_size: int):
+        super().__init__()
+        self.config = config
+        self.transformer = GPT2Model(config)
+        self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+
+        # Layer to map symbolic context to a compatible embedding space
+        self.symbol_projection = nn.Linear(symbol_embedding_size, config.n_embd)
+
+    def forward(
+        self,
+        input_ids=None,
+        past_key_values=None,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        head_mask=None,
+        inputs_embeds=None,
+        encoder_hidden_states=None, # Not typically used in standard GPT-2
+        encoder_attention_mask=None, # Not typically used in standard GPT-2
+        labels=None, # Optional for training
+        use_cache=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=True,
+        symbol_context=None, # Your symbolic context tensor
+    ):
+        # Handle symbolic context injection
+        if symbol_context is not None:
+            # Project symbolic context to the model's embedding size
+            symbol_embeds = self.symbol_projection(symbol_context) # Shape: (batch_size, num_symbol_tokens, hidden_size)
+
+            # If input_ids are provided, get token embeddings
+            if input_ids is not None:
+                input_embeds = self.transformer.wte(input_ids) # Shape: (batch_size, seq_length, hidden_size)
+                # Concatenate symbolic embeddings with token embeddings
+                inputs_embeds = torch.cat([symbol_embeds, input_embeds], dim=1)
+                # Update attention_mask to include symbolic context
+                if attention_mask is not None:
+                    symbol_mask = torch.ones(symbol_embeds.shape[:2], dtype=attention_mask.dtype, device=attention_mask.device)
+                    attention_mask = torch.cat([symbol_mask, attention_mask], dim=1)
+                else:
+                     # Create an attention mask for the concatenated sequence
+                    attention_mask = torch.ones(inputs_embeds.shape[:2], dtype=torch.long, device=inputs_embeds.device)
+
+            elif inputs_embeds is not None:
+                 # If inputs_embeds are already provided, just concatenate
+                 inputs_embeds = torch.cat([symbol_embeds, inputs_embeds], dim=1)
+                 # Update attention_mask to include symbolic context
+                 if attention_mask is not None:
+                     symbol_mask = torch.ones(symbol_embeds.shape[:2], dtype=attention_mask.dtype, device=attention_mask.device)
+                     attention_mask = torch.cat([symbol_mask, attention_mask], dim=1)
+                 else:
+                      # Create an attention mask for the concatenated sequence
+                    attention_mask = torch.ones(inputs_embeds.shape[:2], dtype=torch.long, device=inputs_embeds.device)
+
+            else:
+                # Only symbolic context is provided (e.g., to prime the model)
+                inputs_embeds = symbol_embeds
+                 # Create an attention mask for the symbolic sequence
+                if attention_mask is not None:
+                     symbol_mask = torch.ones(symbol_embeds.shape[:2], dtype=attention_mask.dtype, device=attention_mask.device)
+                     attention_mask = torch.cat([symbol_mask, attention_mask], dim=1)
+                else:
+                     attention_mask = torch.ones(inputs_embeds.shape[:2], dtype=torch.long, device=inputs_embeds.device)
+
+
+            # Update position_ids to account for the prepended symbolic context
+            if position_ids is None:
+                seq_length = inputs_embeds.shape[1]
+                past_length = 0
+                if past_key_values is not None:
+                    past_length = past_key_values[0][0].shape[-2]
+                position_ids = torch.arange(past_length, seq_length + past_length, dtype=torch.long, device=inputs_embeds.device)
+                position_ids = position_ids.unsqueeze(0).expand(inputs_embeds.shape[0], -1) # (batch_size, seq_length + num_symbol_tokens)
+            else:
+                # Assuming position_ids only covered the original tokens, adjust them
+                 num_symbol_tokens = symbol_embeds.shape[1]
+                 position_ids = position_ids + num_symbol_tokens # Shift positions of original tokens
+
+            # Add positional embeddings manually
+            input_embeds_with_pos = inputs_embeds + self.transformer.wpe(position_ids)
+
+        elif inputs_embeds is not None:
+            # If inputs_embeds are already provided (without symbolic context), use them directly
+            input_embeds_with_pos = inputs_embeds
+             # Add positional embeddings if position_ids are provided
+            if position_ids is not None:
+                 input_embeds_with_pos = input_embeds_with_pos + self.transformer.wpe(position_ids)
+
+        elif input_ids is not None:
+            # If input_ids are provided (without symbolic context), get token embeddings
+            input_embeds = self.transformer.wte(input_ids)
+            # Add positional embeddings
+            if position_ids is None:
+                seq_length = input_ids.shape[1]
+                past_length = 0
+                if past_key_values is not None:
+                    past_length = past_key_values[0][0].shape[-2]
+                position_ids = torch.arange(past_length, seq_length + past_length, dtype=torch.long, device=input_ids.device)
+                position_ids = position_ids.unsqueeze(0).expand(input_ids.shape[0], -1)
+            input_embeds_with_pos = input_embeds + self.transformer.wpe(position_ids)
+
+        else:
+            # Should not happen if either input_ids or inputs_embeds is provided
+            raise ValueError("You have to specify either input_ids or inputs_embeds")
+
+
+        # Pass the potentially modified inputs_embeds, attention_mask, and position_ids to the transformer
+        transformer_outputs = self.transformer(
+            inputs_embeds=input_embeds_with_pos,
+            attention_mask=attention_mask,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            position_ids=None, # We added position_ids manually to inputs_embeds
+            token_type_ids=token_type_ids,
+            head_mask=head_mask,
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=encoder_attention_mask,
+            return_dict=return_dict,
+        )
+
+        hidden_states = transformer_outputs[0]  # Last hidden state
+
+        # If symbolic context was prepended, we only want logits for the original tokens
+        if symbol_context is not None and (input_ids is not None or (inputs_embeds is not None and inputs_embeds.shape[1] > 0)):
+            num_symbol_tokens = symbol_context.shape[1]
+            hidden_states = hidden_states[:, num_symbol_tokens:, :] # Take hidden states corresponding to original tokens
+
+        logits = self.lm_head(hidden_states)
+
+        loss = None
+        if labels is not None:
+            # Shift so that tokens < n predict n
+            shift_logits = logits[..., :-1, :].contiguous()
+            shift_labels = labels[..., 1:].contiguous()
+            # Flatten the tokens
+            loss_fct = nn.CrossEntropyLoss()
+            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+
+        if not return_dict:
+            output = (logits,) + transformer_outputs[1:]
+            return ((loss,) + output) if loss is not None else output
+
+        return CausalLMOutputWithPast(
+            loss=loss,
+            logits=logits,
+            past_key_values=transformer_outputs.past_key_values,
+            hidden_states=transformer_outputs.hidden_states,
+            attentions=transformer_outputs.attentions,
+        )
+
+# Example usage:
+# config = GPT2Config.from_pretrained("gpt2")
+# symbol_embedding_dim = 128 # Example dimension for your symbolic context
+# model = SymbolicallyConditionedGPT2LMHeadModel(config, symbol_embedding_dim)
+
+# # Example symbolic context: a tensor representing some structured information
+# batch_size = 2
+# num_symbol_tokens = 3
+# symbol_context_example = torch.randn(batch_size, num_symbol_tokens, symbol_embedding_dim)
+
+# # Example input text tokens (standard GPT-2 input_ids)
+# input_ids_example = torch.randint(0, config.vocab_size, (batch_size, 10))
+
+# # Forward pass with symbolic context
+# outputs = model(input_ids=input_ids_example, symbol_context=symbol_context_example)
+
+# print("Logits shape:", outputs.logits.shape) # Should be (batch_size, seq_length, vocab_size) where seq_length is the original sequence length
+# print("Past key values:", outputs.past_key_values is not None) # Should be True if use_cache is True (default for generation)
+# print("Loss:", outputs.loss) # Should be None as labels were not provided
